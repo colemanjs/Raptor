@@ -35,4 +35,4 @@ dependencies = [
 raptor = "raptor.cli:run"
 
 [project.urls]
-Homepage = "https://code.ornl.gov/ORNL-MDF/rapiddefectpredictor"
+Homepage = "https://github.com/ORNL-MDF/Raptor"
