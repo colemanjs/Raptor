@@ -17,6 +17,7 @@ from vtk.util import numpy_support
 import pyvista as pv
 from skimage import measure
 from skimage.morphology import remove_small_objects
+from matplotlib.colors import ListedColormap
 
 from .utilities import ScanPathBuilder
 from .structures import MeltPool, PathVector, Grid
@@ -116,7 +117,8 @@ def create_melt_pool(
 
         else:
             raise ValueError(
-                f"Unsupported data shape: {data.shape}.  Must be [time, value] or [amplitude, frequency, phase]"
+                f"Unsupported data shape: {data.shape}.  "
+                f"Must be [time, value] or [amplitude, frequency, phase]"
             )
 
         # Pad the array with zeros if it has fewer modes than the max.
@@ -176,7 +178,9 @@ def compute_porosity(
 
         # Warm up the main, parallelized compute kernel.
         if grid.n_voxels > 0 and path_vectors:
-            _ = compute_melt_mask(grid.voxels[0:1], melt_pool, path_vectors[0:1])
+            _ = compute_melt_mask(
+                grid.voxels[0:1], grid.resolution, melt_pool, path_vectors[0:1]
+            )
 
         print(f" -> JIT warmup complete ({time.time() - t_start_warmup:.8f}s).")
 
@@ -188,7 +192,9 @@ def compute_porosity(
 
     print("Running melt-mask calculation...")
     t0_run = time.time()
-    melted_mask_flat = compute_melt_mask(grid.voxels, melt_pool, path_vectors)
+    melted_mask_flat = compute_melt_mask(
+        grid.voxels, grid.resolution, melt_pool, path_vectors
+    )
     t_elapsed = time.time() - t0_run
 
     n_melted = melted_mask_flat.sum()
@@ -197,7 +203,7 @@ def compute_porosity(
         f"Melted {n_melted} of {grid.n_voxels} voxels."
     )
 
-    porosity_field = (~melted_mask_flat).astype(np.int8).reshape(grid.shape, order="C")
+    porosity_field = (melted_mask_flat).astype(np.int8).reshape(grid.shape, order="C")
 
     return porosity_field
 
@@ -225,21 +231,20 @@ def write_vtk(
     vtk_data_array = numpy_support.numpy_to_vtk(
         num_array=porosity_vtk_order.ravel(order="C"),
         deep=True,
-        array_type=vtk.VTK_UNSIGNED_CHAR,
+        array_type=vtk.VTK_INT,
     )
-    vtk_data_array.SetName("porosity")
+    vtk_data_array.SetName("Phase")
     imageData.GetPointData().SetScalars(vtk_data_array)
 
     writer = vtk.vtkXMLImageDataWriter()
     writer.SetFileName(vtk_output_path)
     writer.SetInputData(imageData)
-    writer.SetDataModeToBinary()
 
     writer.Write()
     del porosity
     del porosity_vtk_order
 
-    print(f"VTK porosity map written to: {vtk_output_path}")
+    print(f"VTK phase map written to: {vtk_output_path}")
 
 
 def compute_morphology(
@@ -248,9 +253,15 @@ def compute_morphology(
     """
     Extracts pores, computes morphology features.
     """
-    labeled_defects = measure.label(porosity, connectivity=3)
-    minsize = 2
-    filtered_defects = remove_small_objects(labeled_defects, minsize)
+    defect_structure = (porosity == 0).astype(int)
+    print(f"Identifying connected defects...")
+    print(
+        f" -> Found {defect_structure.sum()} defect voxels. "
+        f"Computing morphology features..."
+    )
+    labeled_defects = measure.label(defect_structure, connectivity=3)
+    min_size = 2
+    filtered_defects = remove_small_objects(labeled_defects, min_size=min_size)
 
     return measure.regionprops_table(
         filtered_defects, spacing=voxel_resolution, properties=morphology_fields
@@ -263,40 +274,167 @@ def write_morphology(properties: dict, morphology_output_path: str) -> None:
     """
 
     morphology_df = pd.DataFrame(properties, index=None)
-    morphology_df.to_csv(morphology_output_path, index=False)
+    if len(morphology_df) == 0:
+        print(
+            f"Either no defects were found or all defects were single-voxel. "
+            f"No morphology features to write."
+        )
+        return None
+    else:
+        morphology_df.to_csv(morphology_output_path, index=False)
+        print(
+            f"Morphology features of {len(morphology_df)} "
+            f"defects written to: {morphology_output_path}"
+        )
 
-    print(
-        f"Morphology features of {len(morphology_df)} "
-        f"defects written to: {morphology_output_path}"
+
+def visualize(vtk_output_path: str) -> None:
+    """
+    Visualizes porosity field using PyVista.
+    Defaults to scaling from meters to microns for better labeling.
+    """
+
+    rve = pv.read(vtk_output_path)
+    outline = rve.outline()
+    pore_rve = rve.threshold([-0.5, 0.5], scalars="Phase")
+    render_pore_structure = pore_rve.n_points > 0
+
+    annotations = (
+        {
+            0.5: "Pore",
+            1.5: "Melted",
+            2.5: "Boundary",
+            3.5: "Intersection",
+        }
+        if render_pore_structure
+        else {
+            1.5: "Melted",
+            2.5: "Boundary",
+            3.5: "Intersection",
+        }
+    )
+    n_colors = 4 if render_pore_structure else 3
+    phase_cmap = (
+        ListedColormap(
+            [
+                (1.0, 0.0, 0.0),
+                (0.7, 0.7, 0.7),
+                (0.2, 0.2, 0.2),
+                (1.0, 1.0, 0.0),
+            ],
+            name="phase_cmap",
+            N=n_colors,
+        )
+        if render_pore_structure
+        else ListedColormap(
+            [
+                (0.7, 0.7, 0.7),
+                (0.2, 0.2, 0.2),
+                (1.0, 1.0, 0.0),
+            ],
+            name="phase_cmap",
+            N=n_colors,
+        )
     )
 
+    pl = pv.Plotter(shape=(1, 2), window_size=(1600, 800))
 
-def visualize(vtk_output_path: str, scaling=1e6) -> None:
-    """
-    Visualizes porosity field using PyVista. Defaults to scaling from meters to microns for better labeling.
-    """
-    rve = pv.read(vtk_output_path)
-    isosurface = rve.contour(isosurfaces=5)
+    if render_pore_structure:
+        pl.subplot(0, 1)
+        pore_rve_clip_actor = pl.add_mesh(
+            pore_rve.clip(normal=(1, 0, 0), origin=(rve.bounds[1], 0, 0)),
+            scalars="Phase",
+            cmap=ListedColormap(
+                [
+                    (1.0, 0.0, 0.0),
+                ],
+                name="phase_cmap_pore",
+                N=1,
+            ),
+            interpolate_before_map=False,
+            lighting=False,
+            opacity=1.0,
+            scalar_bar_args={
+                "n_labels": 0,
+            },
+        )
+        pl.add_mesh(outline, color="black", line_width=1)
 
-    # Outline of the original domain
-    outline = rve.outline()
+        label_args = {
+            "font_size": 12,
+            "color": "black",
+            "font_family": "arial",
+            "fmt": "%.0e",
+        }
 
-    # Set up the plotter
-    pl = pv.Plotter()
-    pl.add_mesh(isosurface, color="red", opacity=0.8)
+        pl.show_grid(
+            xtitle="X (µm)",
+            ytitle="Y (µm)",
+            ztitle="Z (µm)",
+            grid=False,
+            location="outer",
+            **label_args,
+        )
+
+        pl.add_axes()
+
+    pl.subplot(0, 0)
+    rve_clipped = rve.clip(normal=(1, 0, 0), origin=(rve.bounds[1], 0, 0))
+
+    clip_actor = pl.add_mesh(
+        rve_clipped,
+        scalars="Phase",
+        cmap=phase_cmap,
+        clim=(0, 4) if render_pore_structure else (1, 4),
+        categories=True,
+        n_colors=n_colors,
+        annotations=annotations,
+        interpolate_before_map=False,
+        lighting=False,
+        opacity=1.0,
+        show_scalar_bar=True,
+        scalar_bar_args={"title": "Phase", "n_labels": 0},
+    )
     pl.add_mesh(outline, color="black", line_width=1)
+
     label_args = {
         "font_size": 12,
         "color": "black",
         "font_family": "arial",
         "fmt": "%.0e",
     }
+
     pl.show_grid(
-        xtitle="X (um)",
-        ytitle="Y (um)",
-        ztitle="Z (um)",
+        xtitle="X (µm)",
+        ytitle="Y (µm)",
+        ztitle="Z (µm)",
         grid=False,
         location="outer",
         **label_args,
     )
+
+    pl.add_axes()
+
+    def update_clip(normal, origin):
+        new_clipped = rve.clip(normal=normal, origin=origin)
+        clip_actor.mapper.SetInputData(new_clipped)
+        (
+            pore_rve_clip_actor.mapper.SetInputData(
+                new_clipped.threshold([-0.5, 0.5], scalars="Phase")
+            )
+            if render_pore_structure
+            else None
+        )
+
+    pl.add_plane_widget(
+        update_clip,
+        normal=(1, 0, 0),
+        origin=rve.center,
+        bounds=rve.bounds,
+        color="blue",
+        outline_translation=False,
+    )
+
+    pl.link_views()  # Link the two views for synchronized interaction
+
     pl.show()
