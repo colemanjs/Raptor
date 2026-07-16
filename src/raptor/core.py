@@ -58,8 +58,6 @@ def compute_distance_to_boundary(
 
     rv_sqr = y * y + z * z
 
-    # The radial direction is undefined at the melt-pool center. It is safely
-    # inside the boundary, so return its distance to the nearest semi-axis.
     if rv_sqr == 0.0:
         return -min(a, height, depth)
 

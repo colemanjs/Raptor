@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 import tempfile
 import vtk
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 # Import the module under test
@@ -490,6 +491,11 @@ class TestWriteVtk:
 
         assert output_path.exists()
         assert output_path.stat().st_size > 0
+        root = ET.parse(output_path).getroot()
+        data_array = root.find("./ImageData/Piece/PointData/DataArray")
+        assert data_array is not None
+        assert data_array.attrib["format"] == "binary"
+        assert root.find("AppendedData") is None
 
     def test_write_vtk_file_creation(self, temp_output_dir):
         """Test that VTK file is created at specified path."""
