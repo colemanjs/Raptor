@@ -164,9 +164,7 @@ def unpack_kernel_arguments(voxels, melt_pool, vectors):
 
 
 class TestComputeMeltMask:
-    def test_center_boundary_and_outside_labels(
-        self, constant_melt_pool, path_vector
-    ):
+    def test_center_boundary_and_outside_labels(self, constant_melt_pool, path_vector):
         prepare_vector(path_vector, constant_melt_pool)
         voxels = np.array(
             [
@@ -195,9 +193,7 @@ class TestComputeMeltMask:
     def test_aabb_culls_distant_voxel(self, constant_melt_pool, path_vector):
         prepare_vector(path_vector, constant_melt_pool)
         voxel = np.array([[10.0, 10.0, 10.0]], dtype=np.float64)
-        result = compute_melt_mask(
-            voxel, RESOLUTION, constant_melt_pool, [path_vector]
-        )
+        result = compute_melt_mask(voxel, RESOLUTION, constant_melt_pool, [path_vector])
         assert result[0] == 0
 
     def test_overlapping_boundaries_are_intersections(
@@ -215,9 +211,7 @@ class TestComputeMeltMask:
             prepare_vector(vector, constant_melt_pool)
         voxel = np.array([[0.5e-3, WIDTH / 2.0, 0.0]], dtype=np.float64)
 
-        result = compute_melt_mask(
-            voxel, RESOLUTION, constant_melt_pool, vectors
-        )
+        result = compute_melt_mask(voxel, RESOLUTION, constant_melt_pool, vectors)
 
         assert result[0] == 3
 
@@ -233,9 +227,7 @@ class TestComputeMeltMask:
 
         assert result[0] == 1
 
-    def test_implicit_kernel_matches_wrapper(
-        self, constant_melt_pool, path_vector
-    ):
+    def test_implicit_kernel_matches_wrapper(self, constant_melt_pool, path_vector):
         prepare_vector(path_vector, constant_melt_pool)
         voxels = np.array(
             [[0.25e-3, 0.0, 0.0], [0.75e-3, WIDTH / 2.0, 0.0]],

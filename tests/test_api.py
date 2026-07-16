@@ -419,9 +419,7 @@ class TestCreateMeltPool:
     def test_create_melt_pool_invalid_data_shape(self):
         """Test melt pool creation with invalid data shape."""
         invalid = np.ones((5, 4))
-        data = {
-            key: (invalid, 2, 1.0, 2.0) for key in ("width", "depth", "height")
-        }
+        data = {key: (invalid, 2, 1.0, 2.0) for key in ("width", "depth", "height")}
         with pytest.raises(ValueError, match="Unsupported data shape"):
             create_melt_pool(data, enable_random_phases=False)
 
@@ -516,9 +514,7 @@ class TestWriteVtk:
     def test_write_vtk_different_resolutions(self, temp_output_dir):
         """Test VTK writing with different voxel resolutions."""
         output_path = temp_output_dir / "spacing.vti"
-        write_vtk(
-            np.zeros(3), 2.5e-6, np.ones((2, 2, 2), dtype=np.int8), output_path
-        )
+        write_vtk(np.zeros(3), 2.5e-6, np.ones((2, 2, 2), dtype=np.int8), output_path)
         reader = vtk.vtkXMLImageDataReader()
         reader.SetFileName(str(output_path))
         reader.Update()
