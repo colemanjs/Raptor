@@ -239,6 +239,7 @@ def write_vtk(
     writer = vtk.vtkXMLImageDataWriter()
     writer.SetFileName(vtk_output_path)
     writer.SetInputData(imageData)
+    writer.SetDataModeToBinary()
 
     writer.Write()
     del porosity
@@ -253,18 +254,20 @@ def compute_morphology(
     """
     Extracts pores, computes morphology features.
     """
-    defect_structure = (porosity == 0).astype(int)
+    defect_structure = porosity == 0
     print(f"Identifying connected defects...")
     print(
         f" -> Found {defect_structure.sum()} defect voxels. "
         f"Computing morphology features..."
     )
-    labeled_defects = measure.label(defect_structure, connectivity=3)
     min_size = 2
-    filtered_defects = remove_small_objects(labeled_defects, min_size=min_size)
+    filtered_defects = remove_small_objects(
+        defect_structure, min_size=min_size, connectivity=3
+    )
+    labeled_defects = measure.label(filtered_defects, connectivity=3)
 
     return measure.regionprops_table(
-        filtered_defects, spacing=voxel_resolution, properties=morphology_fields
+        labeled_defects, spacing=voxel_resolution, properties=morphology_fields
     )
 
 
