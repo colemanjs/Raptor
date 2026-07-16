@@ -58,7 +58,7 @@ def compute_distance_to_boundary(
 
     rv_sqr = y * y + z * z
 
-    if rv_sqr == 0.0:
+    if rv_sqr < resolution * resolution:
         return -min(a, height, depth)
 
     rv = np.sqrt(rv_sqr)
