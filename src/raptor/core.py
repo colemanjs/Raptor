@@ -56,10 +56,14 @@ def compute_distance_to_boundary(
     b = b_choices[selector]
     n = n_choices[selector]
 
-    theta = np.arctan2(np.abs(z), y)
-    cos_theta = np.cos(theta)
-    sin_theta = np.sin(theta)
-    rv = (y**2 + z**2) ** 0.5
+    rv_sqr = y * y + z * z
+
+    # The radial direction is undefined at the melt-pool center. It is safely
+    # inside the boundary, so return its distance to the nearest semi-axis.
+    if rv_sqr == 0.0:
+        return -min(a, height, depth)
+
+    rv = np.sqrt(rv_sqr)
     r0 = rv
     inv_r0 = 1.0 / r0
     cos_theta = y * inv_r0
